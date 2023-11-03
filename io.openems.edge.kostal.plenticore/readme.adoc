@@ -1,0 +1,3 @@
+= io.openems.edge.kostal.plenticore
+
+https://github.com/OpenEMS/openems/tree/develop/io.openems.edge.kostal.plenticore[Source Code icon:github[]]
