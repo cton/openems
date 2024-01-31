@@ -1,3 +1,15 @@
-= io.openems.edge.kostal.plenticore
+= Kostal Plenticore Plus Hybrid Inverters
+
+Ess:
+
+- SymmetricEss
+
+Charger:
+
+- EssDcCharger
+
+Grid-Meter:
+
+- ElectricityMeter
 
 https://github.com/OpenEMS/openems/tree/develop/io.openems.edge.kostal.plenticore[Source Code icon:github[]]
