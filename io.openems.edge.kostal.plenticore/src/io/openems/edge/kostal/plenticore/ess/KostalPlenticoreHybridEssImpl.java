@@ -58,8 +58,6 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 
 	private Config config;
 
-	private final Logger log = LoggerFactory.getLogger(KostalPlenticoreHybridEssImpl.class);
-
 	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.OPTIONAL)
 	private volatile Timedata timedata = null;
 
@@ -68,9 +66,6 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 
 	@Reference
 	private Power power;
-
-	// @Reference
-	// private Sum sum;
 
 	@Reference
 	private ComponentManager componentManager;

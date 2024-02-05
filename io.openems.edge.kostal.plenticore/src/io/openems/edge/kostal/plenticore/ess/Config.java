@@ -3,6 +3,8 @@ package io.openems.edge.kostal.plenticore.ess;
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 
+import io.openems.edge.kostal.plenticore.KostalPlenticoreConstants;
+
 @ObjectClassDefinition(//
 		name = "KOSTAL Plenticore Hybrid ESS", //
 		description = "The energy storage system implementation of a KOSTAL Plenticore")
@@ -24,10 +26,10 @@ import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 	String modbus_id() default "modbus0";
 	
 	@AttributeDefinition(name = "Modbus Unit-ID", description = "The Unit-ID of the Modbus device.")
-	int modbusUnitId() default 71;
+	int modbusUnitId() default KostalPlenticoreConstants.DEFAULT_UNIT_ID;
 	
 	@AttributeDefinition(name = "Capacity", description = "Capacity of the battery in [Wh]")
-	int capacity() default 7_300;
+	int capacity() default 11_500;
 
 	@AttributeDefinition(name = "Maximum power", description = "Maximum charge/discharge power in [W]")
 	int maxBatteryPower() default 4_000;

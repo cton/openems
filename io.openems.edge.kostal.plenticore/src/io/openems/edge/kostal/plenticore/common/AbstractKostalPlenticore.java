@@ -3,9 +3,6 @@ package io.openems.edge.kostal.plenticore.common;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
@@ -31,9 +28,6 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 
 public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComponent
 		implements KostalPlenticore, OpenemsComponent, TimedataProvider {
-
-	private final Logger log = LoggerFactory.getLogger(AbstractKostalPlenticore.class);
-	
 
 	private final io.openems.edge.common.channel.ChannelId activePowerChannelId;
 	private final io.openems.edge.common.channel.ChannelId reactivePowerChannelId;
@@ -76,12 +70,6 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 						m(KostalPlenticore.ChannelId.NUMBER_OF_PHASES, new UnsignedWordElement(32)), //
 						new DummyRegisterElement(33), //
 						m(KostalPlenticore.ChannelId.NUMBER_OF_STRING, new UnsignedWordElement(34)) //
-				// new DummyRegisterElement(35), //
-				// m(KostalPlenticoreCore.ChannelId.HARDWARE_VERSION,
-				// new UnsignedDoublewordElement(36).wordOrder(WordOrder.LSWMSW)), //
-				// new DummyRegisterElement(36, 53), //
-				// m(KostalPlenticoreCore.ChannelId.POWER_ID, new
-				// UnsignedDoublewordElement(54))), //
 				),
 				new FC3ReadRegistersTask(100, Priority.HIGH,
 						m(KostalPlenticore.ChannelId.OVERALL_DC_POWER,
@@ -178,33 +166,11 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 						m(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER_SETPOINT,
 								new FloatDoublewordElement(1034).wordOrder(WordOrder.LSWMSW))), //
 				new FC3ReadRegistersTask(1076, Priority.HIGH, //
-//						m(HybridEss.ChannelId.DC_CHARGE_ENERGY,
-//								new FloatDoublewordElement(1046).wordOrder(WordOrder.LSWMSW)),
-//						m(HybridEss.ChannelId.DC_DISCHARGE_ENERGY,
-//								new FloatDoublewordElement(1048).wordOrder(WordOrder.LSWMSW)),
-//						new DummyRegisterElement(1050, 1075), //
 						m(KostalPlenticore.ChannelId.MAXIMUM_CHARGE_POWER_LIMIT,
 								new FloatDoublewordElement(1076).wordOrder(WordOrder.LSWMSW)), //
 						m(KostalPlenticore.ChannelId.MAXIMUM_DISCHARGE_POWER_LIMIT,
 								new FloatDoublewordElement(1078).wordOrder(WordOrder.LSWMSW)), //
 						m(KostalPlenticore.ChannelId.BATTERY_MANAGEMENT_MODE, new UnsignedWordElement(1080))
-//								,
-//								new ElementToChannelConverter(
-//										// element -> channel
-//										value -> {
-//											System.out.println("Battery Charge Power 582: "+value+" W");
-//											float result;
-//											if (value == null || (short) value > 10000) {
-//												result = 0;
-//											} else {
-//												//result = Float.;
-//												result = 0;
-//											}
-//											return result;
-//										}, //
-//
-//										// channel -> element
-//										value -> value)) //
 				)); //
 		return protocol;
 	}

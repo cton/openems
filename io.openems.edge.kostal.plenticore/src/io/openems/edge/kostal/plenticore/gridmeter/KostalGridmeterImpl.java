@@ -75,7 +75,7 @@ public class KostalGridmeterImpl extends AbstractOpenemsModbusComponent implemen
 				ElectricityMeter.ChannelId.values(), //
 				KostalGridmeter.ChannelId.values()
 		);
-		//ElectricityMeter.initializePowerSumChannels(this);
+		
 	}
 
 	@Activate
