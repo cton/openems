@@ -1,11 +1,14 @@
 package io.openems.edge.app.timeofusetariff;
 
+import static io.openems.edge.core.appmanager.validator.Checkables.checkHome;
+
 import java.util.Map;
 import java.util.function.Function;
 
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 
 import com.google.common.collect.Lists;
@@ -33,8 +36,10 @@ import io.openems.edge.core.appmanager.OpenemsAppCardinality;
 import io.openems.edge.core.appmanager.OpenemsAppCategory;
 import io.openems.edge.core.appmanager.Type;
 import io.openems.edge.core.appmanager.dependency.Tasks;
+import io.openems.edge.core.appmanager.dependency.aggregatetask.SchedulerByCentralOrderConfiguration.SchedulerComponent;
 import io.openems.edge.core.appmanager.formly.JsonFormlyUtil;
 import io.openems.edge.core.appmanager.formly.enums.InputType;
+import io.openems.edge.core.appmanager.validator.ValidatorConfig;
 
 /**
  * Describes a App for StromdaoCorrently.
@@ -57,7 +62,7 @@ import io.openems.edge.core.appmanager.formly.enums.InputType;
   }
  * </pre>
  */
-@org.osgi.service.component.annotations.Component(name = "App.TimeOfUseTariff.Stromdao")
+@Component(name = "App.TimeOfUseTariff.Stromdao")
 public class StromdaoCorrently extends
 		AbstractOpenemsAppWithProps<StromdaoCorrently, Property, Type.Parameter.BundleParameter> implements OpenemsApp {
 
@@ -126,7 +131,8 @@ public class StromdaoCorrently extends
 
 			return AppConfiguration.create() //
 					.addTask(Tasks.component(components)) //
-					.addTask(Tasks.scheduler(ctrlEssTimeOfUseTariffId, "ctrlBalancing0")) //
+					.addTask(Tasks.schedulerByCentralOrder(new SchedulerComponent(ctrlEssTimeOfUseTariffId,
+							"Controller.Ess.Time-Of-Use-Tariff", this.getAppId()))) //
 					.addTask(Tasks.persistencePredictor("_sum/UnmanagedConsumptionActivePower")) //
 					.build();
 		};
@@ -152,6 +158,12 @@ public class StromdaoCorrently extends
 	@Override
 	public OpenemsAppCardinality getCardinality() {
 		return OpenemsAppCardinality.SINGLE_IN_CATEGORY;
+	}
+
+	@Override
+	protected ValidatorConfig.Builder getValidateBuilder() {
+		return ValidatorConfig.create() //
+				.setCompatibleCheckableConfigs(checkHome());
 	}
 
 	@Override

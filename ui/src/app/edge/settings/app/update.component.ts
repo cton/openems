@@ -1,3 +1,4 @@
+// @ts-strict-ignore
 import { Component, OnInit } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -5,11 +6,11 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 import { TranslateService } from '@ngx-translate/core';
 import { ComponentJsonApiRequest } from 'src/app/shared/jsonrpc/request/componentJsonApiRequest';
 import { Edge, Service, Utils, Websocket } from '../../../shared/shared';
+import { InstallAppComponent } from './install.component';
 import { DeleteAppInstance } from './jsonrpc/deleteAppInstance';
 import { GetAppAssistant } from './jsonrpc/getAppAssistant';
 import { GetAppInstances } from './jsonrpc/getAppInstances';
 import { UpdateAppInstance } from './jsonrpc/updateAppInstance';
-import { InstallAppComponent } from './install.component';
 
 interface MyInstance {
   instanceId: string, // uuid
@@ -30,10 +31,9 @@ export class UpdateAppComponent implements OnInit {
   public readonly spinnerId: string = UpdateAppComponent.SELECTOR;
 
   protected instances: MyInstance[] = [];
+  protected appName: string | null = null;
 
   private edge: Edge | null = null;
-
-  protected appName: string | null = null;
 
   public constructor(
     private route: ActivatedRoute,
@@ -47,8 +47,8 @@ export class UpdateAppComponent implements OnInit {
 
   public ngOnInit() {
     this.service.startSpinner(this.spinnerId);
-    let appId = this.route.snapshot.params["appId"];
-    let appName = this.route.snapshot.queryParams['name'];
+    const appId = this.route.snapshot.params["appId"];
+    const appName = this.route.snapshot.queryParams['name'];
     this.service.setCurrentComponent(appName, this.route).then(edge => {
       this.edge = edge;
       edge.sendRequest(this.websocket,
@@ -56,17 +56,17 @@ export class UpdateAppComponent implements OnInit {
           componentId: '_appManager',
           payload: new GetAppInstances.Request({ appId: appId }),
         })).then(getInstancesResponse => {
-          let recInstances = (getInstancesResponse as GetAppInstances.Response).result.instances;
+          const recInstances = (getInstancesResponse as GetAppInstances.Response).result.instances;
 
           edge.sendRequest(this.websocket,
             new ComponentJsonApiRequest({
               componentId: '_appManager',
               payload: new GetAppAssistant.Request({ appId: appId }),
             })).then(getAppAssistantResponse => {
-              let appAssistant = (getAppAssistantResponse as GetAppAssistant.Response).result;
+              const appAssistant = (getAppAssistantResponse as GetAppAssistant.Response).result;
               this.appName = appAssistant.name;
               this.instances = [];
-              for (let instance of recInstances) {
+              for (const instance of recInstances) {
                 const form = new FormGroup({});
                 const model = {
                   'ALIAS': instance.alias,
@@ -92,9 +92,9 @@ export class UpdateAppComponent implements OnInit {
     this.service.startSpinnerTransparentBackground(instance.instanceId);
     instance.isUpdating = true;
     // remove alias field from properties
-    let alias = instance.form.value['ALIAS'];
+    const alias = instance.form.value['ALIAS'];
     const clonedFields = {};
-    for (let item in instance.form.value) {
+    for (const item in instance.form.value) {
       if (item != 'ALIAS') {
         clonedFields[item] = instance.form.value[item];
       }
@@ -138,7 +138,8 @@ export class UpdateAppComponent implements OnInit {
       })).then(response => {
         this.instances.splice(this.instances.indexOf(instance), 1);
         this.service.toast(this.translate.instant('Edge.Config.App.successDelete'), 'success');
-        this.router.navigate(['device/' + (this.edge.id) + '/settings/app/']);
+        const navigationExtras = { state: { appInstanceChange: true } };
+        this.router.navigate(['device/' + (this.edge.id) + '/settings/app/'], navigationExtras);
       })
       .catch(InstallAppComponent.errorToast(this.service, error => this.translate.instant('Edge.Config.App.failDelete', { error: error })))
       .finally(() => {

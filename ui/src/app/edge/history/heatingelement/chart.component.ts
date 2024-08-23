@@ -1,13 +1,15 @@
-import { formatNumber } from '@angular/common';
+// @ts-strict-ignore
 import { Component, Input, OnChanges, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
+
+import type { ChartOptions } from 'chart.js';
 import { DefaultTypes } from 'src/app/shared/service/defaulttypes';
+import { ChartAxis, YAxisTitle } from 'src/app/shared/service/utils';
 
 import { QueryHistoricTimeseriesDataResponse } from '../../../shared/jsonrpc/response/queryHistoricTimeseriesDataResponse';
 import { ChannelAddress, Edge, EdgeConfig, Service } from '../../../shared/shared';
 import { AbstractHistoryChart } from '../abstracthistorychart';
-import { Data, TooltipItem } from '../shared';
 
 @Component({
   selector: 'heatingelementChart',
@@ -15,12 +17,8 @@ import { Data, TooltipItem } from '../shared';
 })
 export class HeatingelementChartComponent extends AbstractHistoryChart implements OnInit, OnChanges, OnDestroy {
 
-  @Input() public period: DefaultTypes.HistoryPeriod;
-  @Input() public component: EdgeConfig.Component;
-
-  ngOnChanges() {
-    this.updateChart();
-  }
+  @Input({ required: true }) public period!: DefaultTypes.HistoryPeriod;
+  @Input({ required: true }) public component!: EdgeConfig.Component;
 
   constructor(
     protected override service: Service,
@@ -28,6 +26,10 @@ export class HeatingelementChartComponent extends AbstractHistoryChart implement
     private route: ActivatedRoute,
   ) {
     super("heatingelement-chart", service, translate);
+  }
+
+  ngOnChanges() {
+    this.updateChart();
   }
 
   ngOnInit() {
@@ -40,6 +42,10 @@ export class HeatingelementChartComponent extends AbstractHistoryChart implement
     this.unsubscribeChartRefresh();
   }
 
+  public getChartHeight(): number {
+    return window.innerHeight / 1.3;
+  }
+
   protected updateChart() {
     this.autoSubscribeChartRefresh();
     this.startSpinner();
@@ -47,20 +53,20 @@ export class HeatingelementChartComponent extends AbstractHistoryChart implement
     this.loading = true;
     this.queryHistoricTimeseriesData(this.period.from, this.period.to).then(response => {
       this.service.getCurrentEdge().then(() => {
-        let result = (response as QueryHistoricTimeseriesDataResponse).result;
+        const result = (response as QueryHistoricTimeseriesDataResponse).result;
         // convert labels
-        let labels: Date[] = [];
-        for (let timestamp of result.timestamps) {
+        const labels: Date[] = [];
+        for (const timestamp of result.timestamps) {
           labels.push(new Date(timestamp));
         }
         this.labels = labels;
 
         // convert datasets
-        let datasets = [];
-        let level = this.component.id + '/Level';
+        const datasets = [];
+        const level = this.component.id + '/Level';
 
         if (level in result.data) {
-          let levelData = result.data[level].map(value => {
+          const levelData = result.data[level].map(value => {
             if (value == null) {
               return null;
             } else {
@@ -90,33 +96,32 @@ export class HeatingelementChartComponent extends AbstractHistoryChart implement
       console.error(reason); // TODO error message
       this.initializeChart();
       return;
+    }).finally(async () => {
+      this.formatNumber = '1.0-1';
+      this.unit = YAxisTitle.NONE;
+      await this.setOptions(this.options);
+      this.applyControllerSpecificOptions(this.options);
     });
   }
 
   protected getChannelAddresses(edge: Edge, config: EdgeConfig): Promise<ChannelAddress[]> {
     return new Promise((resolve) => {
-      let levels = new ChannelAddress(this.component.id, 'Level');
-      let channeladdresses = [levels];
+      const levels = new ChannelAddress(this.component.id, 'Level');
+      const channeladdresses = [levels];
       resolve(channeladdresses);
     });
   }
 
-  protected setLabel() {
-    let options = this.createDefaultChartOptions();
-    options.scales.yAxes[0].id = 'yAxis1';
-    options.scales.yAxes[0].scaleLabel.labelString = 'Level';
-    options.scales.yAxes[0].ticks.beginAtZero = true;
-    options.scales.yAxes[0].ticks.max = 3;
-    options.scales.yAxes[0].ticks.stepSize = 1;
-    options.tooltips.callbacks.label = function (tooltipItem: TooltipItem, data: Data) {
-      let label = data.datasets[tooltipItem.datasetIndex].label;
-      let value = tooltipItem.yLabel;
-      return label + ": " + formatNumber(value, 'de', '1.0-1'); // TODO get locale dynamically
-    };
+  protected applyControllerSpecificOptions(options: ChartOptions) {
+    options.scales[ChartAxis.LEFT]['title'].text = 'Level';
+    options.scales[ChartAxis.LEFT]['beginAtZero'] = true;
+    options.scales[ChartAxis.LEFT].max = 3;
+    options.scales[ChartAxis.LEFT].ticks['stepSize'] = 1;
     this.options = options;
   }
 
-  public getChartHeight(): number {
-    return window.innerHeight / 1.3;
+  protected setLabel() {
+    this.options = this.createDefaultChartOptions();
   }
+
 }

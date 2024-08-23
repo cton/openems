@@ -1,5 +1,7 @@
 package io.openems.edge.io.shelly.shellyplug;
 
+import static io.openems.edge.io.shelly.common.Utils.generateDebugLog;
+
 import java.util.Objects;
 
 import org.osgi.service.component.ComponentContext;
@@ -8,7 +10,6 @@ import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.component.annotations.ReferenceScope;
 import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
@@ -21,6 +22,8 @@ import com.google.gson.JsonElement;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.common.utils.JsonUtils;
 import io.openems.edge.bridge.http.api.BridgeHttp;
+import io.openems.edge.bridge.http.api.BridgeHttpFactory;
+import io.openems.edge.bridge.http.api.HttpResponse;
 import io.openems.edge.common.channel.BooleanWriteChannel;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.OpenemsComponent;
@@ -50,8 +53,10 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 	private SinglePhase phase = null;
 	private String baseUrl;
 
-	@Reference(scope = ReferenceScope.PROTOTYPE_REQUIRED)
 	private BridgeHttp httpBridge;
+
+	@Reference
+	private BridgeHttpFactory httpBridgeFactory;
 
 	public IoShellyPlugImpl() {
 		super(//
@@ -73,6 +78,7 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 		this.meterType = config.type();
 		this.phase = config.phase();
 		this.baseUrl = "http://" + config.ip();
+		this.httpBridge = this.httpBridgeFactory.get();
 
 		if (!this.isEnabled()) {
 			return;
@@ -85,6 +91,8 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 	@Deactivate
 	protected void deactivate() {
 		super.deactivate();
+		this.httpBridgeFactory.unget(this.httpBridge);
+		this.httpBridge = null;
 	}
 
 	@Override
@@ -94,16 +102,7 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 
 	@Override
 	public String debugLog() {
-		var b = new StringBuilder();
-		var valueOpt = this.getRelayChannel().value().asOptional();
-		if (valueOpt.isPresent()) {
-			b.append(valueOpt.get() ? "On" : "Off");
-		} else {
-			b.append("Unknown");
-		}
-		b.append("|");
-		b.append(this.getActivePowerChannel().value().asString());
-		return b.toString();
+		return generateDebugLog(this.getRelayChannel(), this.getActivePowerChannel());
 	}
 
 	@Override
@@ -119,7 +118,7 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 		}
 	}
 
-	private void processHttpResult(JsonElement result, Throwable error) {
+	private void processHttpResult(HttpResponse<JsonElement> result, Throwable error) {
 		this._setSlaveCommunicationFailed(result == null);
 		if (error != null) {
 			this._setRelay(null);
@@ -129,10 +128,10 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 			return;
 		}
 		try {
-			final var relays = JsonUtils.getAsJsonArray(result, "relays");
+			final var relays = JsonUtils.getAsJsonArray(result.data(), "relays");
 			final var relay1 = JsonUtils.getAsJsonObject(relays.get(0));
 			final var relayIson = JsonUtils.getAsBoolean(relay1, "ison");
-			final var meters = JsonUtils.getAsJsonArray(result, "meters");
+			final var meters = JsonUtils.getAsJsonArray(result.data(), "meters");
 			final var meter1 = JsonUtils.getAsJsonObject(meters.get(0));
 			final var power = Math.round(JsonUtils.getAsFloat(meter1, "power"));
 			final var energy = JsonUtils.getAsLong(meter1, "total") /* Unit: Wm */ / 60 /* Wh */;
@@ -166,7 +165,7 @@ public class IoShellyPlugImpl extends AbstractOpenemsComponent
 			return;
 		}
 		final var url = this.baseUrl + "/relay/" + index + "?turn=" + (writeValue.get() ? "on" : "off");
-		this.httpBridge.request(url).whenComplete((t, e) -> {
+		this.httpBridge.get(url).whenComplete((t, e) -> {
 			this._setSlaveCommunicationFailed(e != null);
 		});
 	}

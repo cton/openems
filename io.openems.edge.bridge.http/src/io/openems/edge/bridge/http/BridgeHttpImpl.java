@@ -1,21 +1,33 @@
 package io.openems.edge.bridge.http;
 
-import java.util.PriorityQueue;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.function.Predicate;
 
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceScope;
 import org.osgi.service.component.annotations.ServiceScope;
 import org.osgi.service.event.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.openems.common.utils.ThreadPoolUtils;
+import io.openems.common.utils.FunctionUtils;
 import io.openems.edge.bridge.http.api.BridgeHttp;
+import io.openems.edge.bridge.http.api.BridgeHttpExecutor;
+import io.openems.edge.bridge.http.api.CycleSubscriber;
+import io.openems.edge.bridge.http.api.EndpointFetcher;
+import io.openems.edge.bridge.http.api.HttpError;
+import io.openems.edge.bridge.http.api.HttpResponse;
+import io.openems.edge.bridge.http.time.DelayTimeProvider.Delay;
 import io.openems.edge.common.event.EdgeEventConstants;
 
 @Component(//
@@ -23,19 +35,37 @@ import io.openems.edge.common.event.EdgeEventConstants;
 )
 public class BridgeHttpImpl implements BridgeHttp {
 
-	private static class EndpointCountdown {
+	public static class CycleEndpointCountdown {
 		private volatile int cycleCount;
-		public final Endpoint endpoint;
+		private final CycleEndpoint cycleEndpoint;
 		private volatile boolean running = false;
 
-		public EndpointCountdown(Endpoint endpoint) {
-			super();
+		public CycleEndpointCountdown(CycleEndpoint endpoint) {
 			this.cycleCount = endpoint.cycle();
-			this.endpoint = endpoint;
+			this.cycleEndpoint = endpoint;
 		}
 
-		public EndpointCountdown reset() {
-			this.cycleCount = this.endpoint.cycle();
+		public CycleEndpoint getCycleEndpoint() {
+			return this.cycleEndpoint;
+		}
+
+		/**
+		 * Resets the current cycle count to the initial cycle count.
+		 * 
+		 * @return this
+		 */
+		public CycleEndpointCountdown reset() {
+			return this.resetTo(this.cycleEndpoint.cycle());
+		}
+
+		/**
+		 * Resets the current cycle count to the given cycle count.
+		 * 
+		 * @param cycleCount the cycleCount to reset the current cycleCount to
+		 * @return this
+		 */
+		public CycleEndpointCountdown resetTo(int cycleCount) {
+			this.cycleCount = cycleCount;
 			return this;
 		}
 
@@ -43,6 +73,9 @@ public class BridgeHttpImpl implements BridgeHttp {
 			return this.cycleCount;
 		}
 
+		/**
+		 * Decreases the current cycle count by one.
+		 */
 		public void decreaseCycleCount() {
 			this.cycleCount--;
 		}
@@ -57,57 +90,127 @@ public class BridgeHttpImpl implements BridgeHttp {
 
 	}
 
+	public static class TimeEndpointCountdown {
+		private final TimeEndpoint timeEndpoint;
+		private volatile boolean running = false;
+		private volatile boolean shutdown = false;
+		private Runnable shutdownCurrentTask = FunctionUtils::doNothing;
+
+		public TimeEndpointCountdown(TimeEndpoint timeEndpoint) {
+			this.timeEndpoint = timeEndpoint;
+		}
+
+		public TimeEndpoint getTimeEndpoint() {
+			return this.timeEndpoint;
+		}
+
+		public boolean isRunning() {
+			return this.running;
+		}
+
+		public void setRunning(boolean running) {
+			this.running = running;
+		}
+
+		public boolean isShutdown() {
+			return this.shutdown;
+		}
+
+		public void setShutdown(boolean shutdown) {
+			this.shutdown = shutdown;
+		}
+
+		public void setShutdownCurrentTask(Runnable shutdownCurrentTask) {
+			this.shutdownCurrentTask = shutdownCurrentTask == null ? FunctionUtils::doNothing : shutdownCurrentTask;
+		}
+
+		/**
+		 * Shuts down the current execution of the active task.
+		 */
+		public void shutdown() {
+			this.setShutdown(true);
+			this.shutdownCurrentTask.run();
+		}
+
+	}
+
 	private final Logger log = LoggerFactory.getLogger(BridgeHttpImpl.class);
 
-	@Reference
-	private CycleSubscriber cycleSubscriber;
+	private final CycleSubscriber cycleSubscriber;
+	private final EndpointFetcher urlFetcher;
+	private final BridgeHttpExecutor pool;
 
-	@Reference
-	private UrlFetcher urlFetcher;
-
-	// TODO change to java 21 virtual threads
-	// TODO: Single pool for every http worker & avoid same endpoint in that pool
-	private final ExecutorService pool = Executors.newCachedThreadPool();
-
-	private final PriorityQueue<EndpointCountdown> endpoints = new PriorityQueue<>(
+	private final PriorityBlockingQueue<CycleEndpointCountdown> cycleEndpoints = new PriorityBlockingQueue<>(11,
 			(e1, e2) -> e1.getCycleCount() - e2.getCycleCount());
 
-	/*
-	 * Default timeout values in ms
-	 */
-	private int connectTimeout = 5000;
-	private int readTimeout = 5000;
+	private final Set<TimeEndpointCountdown> timeEndpoints = ConcurrentHashMap.newKeySet();
 
 	@Activate
-	protected void activate() {
+	public BridgeHttpImpl(//
+			@Reference final CycleSubscriber cycleSubscriber, //
+			@Reference final EndpointFetcher urlFetcher, //
+			@Reference(scope = ReferenceScope.PROTOTYPE_REQUIRED) final BridgeHttpExecutor pool //
+	) {
+		super();
+		this.cycleSubscriber = cycleSubscriber;
+		this.urlFetcher = urlFetcher;
+		this.pool = pool;
+
 		this.cycleSubscriber.subscribe(this::handleEvent);
 	}
 
+	/**
+	 * Deactivate method.
+	 */
 	@Deactivate
-	protected void deactivate() {
+	public void deactivate() {
 		this.cycleSubscriber.unsubscribe(this::handleEvent);
-		this.endpoints.clear();
-		ThreadPoolUtils.shutdownAndAwaitTermination(this.pool, 0);
+		this.cycleEndpoints.clear();
+		this.timeEndpoints.forEach(TimeEndpointCountdown::shutdown);
+		this.timeEndpoints.clear();
 	}
 
 	@Override
-	public void subscribe(Endpoint endpoint) {
-		if (!this.endpoints.offer(new EndpointCountdown(endpoint))) {
+	public CycleEndpoint subscribeCycle(CycleEndpoint endpoint) {
+		Objects.requireNonNull(endpoint, "CycleEndpoint is not allowed to be null!");
+
+		if (!this.cycleEndpoints.offer(new CycleEndpointCountdown(endpoint))) {
 			this.log.warn("Unable to add " + endpoint + "!");
+			return null;
 		}
+		return endpoint;
 	}
 
 	@Override
-	public CompletableFuture<String> request(String url) {
-		final var future = new CompletableFuture<String>();
-		this.pool.execute(this.urlFetcher.createTask(url, this.connectTimeout, this.readTimeout, future));
+	public TimeEndpoint subscribeTime(TimeEndpoint endpoint) {
+		Objects.requireNonNull(endpoint, "TimeEndpoint is not allowed to be null!");
+
+		final var endpointCountdown = new TimeEndpointCountdown(endpoint);
+		this.timeEndpoints.add(endpointCountdown);
+		final var delay = endpoint.delayTimeProvider().onFirstRunDelay();
+
+		// TODO change in java 21 to switch case
+		if (delay instanceof Delay.DurationDelay durationDelay) {
+			final var future = this.pool.schedule(this.createTask(endpointCountdown), durationDelay);
+			endpointCountdown.setShutdownCurrentTask(() -> future.cancel(false));
+		}
+		return endpoint;
+	}
+
+	@Override
+	public CompletableFuture<HttpResponse<String>> request(Endpoint endpoint) {
+		final var future = new CompletableFuture<HttpResponse<String>>();
+		this.pool.execute(() -> {
+			try {
+				final var result = this.urlFetcher.fetchEndpoint(endpoint);
+				future.complete(result);
+			} catch (HttpError e) {
+				future.completeExceptionally(e);
+			} catch (Exception e) {
+				future.completeExceptionally(new HttpError.UnknownError(e));
+			}
+		});
 		return future;
-	}
-
-	@Override
-	public void setTimeout(int connectTimeout, int readTimeout) {
-		this.connectTimeout = connectTimeout;
-		this.readTimeout = readTimeout;
 	}
 
 	private void handleEvent(Event event) {
@@ -115,18 +218,22 @@ public class BridgeHttpImpl implements BridgeHttp {
 		// TODO: Execute before TOPIC_CYCLE_BEFORE_PROCESS_IMAGE, like modbus bridge
 		case EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE -> {
 
-			if (this.endpoints.isEmpty()) {
+			if (this.cycleEndpoints.isEmpty()) {
 				return;
 			}
 
-			this.endpoints.forEach(EndpointCountdown::decreaseCycleCount);
+			this.cycleEndpoints.forEach(CycleEndpointCountdown::decreaseCycleCount);
 
-			while (this.endpoints.peek().getCycleCount() == 0) {
-				final var item = this.endpoints.poll();
+			while (!this.cycleEndpoints.isEmpty() //
+					&& this.cycleEndpoints.peek().getCycleCount() == 0) {
+				final var item = this.cycleEndpoints.poll();
 				synchronized (item) {
 					if (item.isRunning()) {
-						this.log.info("Process for " + item.endpoint + " is still running. Task is not queued twice");
-						this.endpoints.add(item.reset());
+						this.log.info(
+								"Process for " + item.cycleEndpoint + " is still running. Task is not queued twice");
+						if (!this.cycleEndpoints.offer(item.resetTo(1))) {
+							this.log.info("Unable to re-add " + item + " to queue again.");
+						}
 						continue;
 					}
 
@@ -134,27 +241,98 @@ public class BridgeHttpImpl implements BridgeHttp {
 				}
 				this.pool.execute(this.createTask(item));
 
-				this.endpoints.add(item.reset());
+				if (!this.cycleEndpoints.offer(item.reset())) {
+					this.log.warn("Unable to add " + item.cycleEndpoint + "!");
+				}
 			}
 		}
 		}
 	}
 
-	private Runnable createTask(EndpointCountdown endpointItem) {
-		final var future = new CompletableFuture<String>();
-		future.whenComplete((t, e) -> {
+	private Runnable createTask(CycleEndpointCountdown endpointItem) {
+		return () -> {
 			try {
-				if (e != null) {
-					endpointItem.endpoint.onError().accept(e);
-					return;
-				}
-				endpointItem.endpoint.result().accept(t);
+				final var result = this.urlFetcher.fetchEndpoint(endpointItem.getCycleEndpoint().endpoint().get());
+				endpointItem.getCycleEndpoint().onResult().accept(result);
+			} catch (HttpError e) {
+				endpointItem.getCycleEndpoint().onError().accept(e);
 			} finally {
 				synchronized (endpointItem) {
 					endpointItem.setRunning(false);
 				}
 			}
-		});
-		return this.urlFetcher.createTask(endpointItem.endpoint.url(), this.connectTimeout, this.readTimeout, future);
+		};
 	}
+
+	private Runnable createTask(TimeEndpointCountdown endpointCountdown) {
+		return () -> {
+			synchronized (endpointCountdown) {
+				if (endpointCountdown.isShutdown()) {
+					return;
+				}
+				endpointCountdown.setRunning(true);
+			}
+			HttpResponse<String> result = null;
+			HttpError error = null;
+			try {
+				result = this.urlFetcher.fetchEndpoint(endpointCountdown.getTimeEndpoint().endpoint().get());
+				endpointCountdown.getTimeEndpoint().onResult().accept(result);
+			} catch (HttpError e) {
+				endpointCountdown.getTimeEndpoint().onError().accept(e);
+				error = e;
+			} catch (Exception e) {
+				error = new HttpError.UnknownError(e);
+				endpointCountdown.getTimeEndpoint().onError().accept(error);
+			}
+			synchronized (endpointCountdown) {
+				if (endpointCountdown.isShutdown()) {
+					return;
+				}
+			}
+
+			try {
+				final Delay nextDelay;
+				if (error != null) {
+					nextDelay = endpointCountdown.getTimeEndpoint().delayTimeProvider().onErrorRunDelay(error);
+				} else {
+					nextDelay = endpointCountdown.getTimeEndpoint().delayTimeProvider().onSuccessRunDelay(result);
+				}
+
+				// TODO change in java 21 to switch case
+				if (nextDelay instanceof Delay.InfiniteDelay) {
+					// do not queue again
+					return;
+				} else if (nextDelay instanceof Delay.DurationDelay durationDelay) {
+					final var future = this.pool.schedule(this.createTask(endpointCountdown), durationDelay);
+					endpointCountdown.setShutdownCurrentTask(() -> future.cancel(false));
+				}
+
+			} catch (Exception e) {
+				if (this.pool.isShutdown()) {
+					return;
+				}
+				this.log.error("Unexpected exception during Task", e);
+			}
+		};
+	}
+
+	@Override
+	public Collection<TimeEndpoint> removeTimeEndpointIf(Predicate<TimeEndpoint> condition) {
+		return new HashSet<>(this.timeEndpoints).stream() //
+				.filter(t -> condition.test(t.getTimeEndpoint())) //
+				.filter(this.timeEndpoints::remove) //
+				.peek(TimeEndpointCountdown::shutdown) //
+				.map(TimeEndpointCountdown::getTimeEndpoint) //
+				.toList();
+	}
+
+	@Override
+	public Collection<CycleEndpoint> removeCycleEndpointIf(Predicate<CycleEndpoint> condition) {
+		return new ArrayList<>(this.cycleEndpoints).stream() //
+				.filter(t -> condition.test(t.getCycleEndpoint())) //
+				.filter(this.cycleEndpoints::remove) //
+				.map(CycleEndpointCountdown::getCycleEndpoint) //
+				.toList();
+	}
+
 }

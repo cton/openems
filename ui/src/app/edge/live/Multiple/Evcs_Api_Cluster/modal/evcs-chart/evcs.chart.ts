@@ -1,12 +1,11 @@
-import { ChartDataSets } from 'chart.js';
-import { Component, Input, OnInit, OnChanges } from '@angular/core';
-import { CurrentData } from 'src/app/shared/edge/currentdata';
-import { Data } from 'src/app/edge/history/shared';
-import { EdgeConfig, Edge } from 'src/app/shared/shared';
-import { Label } from 'ng2-charts';
+// @ts-strict-ignore
+import { Component, Input, OnChanges, OnInit } from '@angular/core';
 import { ModalController } from '@ionic/angular';
 import { TranslateService } from '@ngx-translate/core';
 import * as Chart from 'chart.js';
+import { Data } from 'src/app/edge/history/shared';
+import { CurrentData } from 'src/app/shared/components/edge/currentdata';
+import { Edge, EdgeConfig } from 'src/app/shared/shared';
 
 @Component({
   selector: EvcsChartComponent.SELECTOR,
@@ -14,24 +13,35 @@ import * as Chart from 'chart.js';
 })
 export class EvcsChartComponent implements OnInit, OnChanges {
 
-  @Input() private evcsMap: { [sourceId: string]: EdgeConfig.Component };
-  @Input() private edge: Edge;
-  @Input() private currentData: CurrentData;
-  @Input() private evcsConfigMap: { [evcsId: string]: EdgeConfig.Component } = {};
-  @Input() private componentId: string;
-
   private static readonly SELECTOR = "evcsChart";
+
+  @Input({ required: true }) private evcsMap!: { [sourceId: string]: EdgeConfig.Component };
+  @Input({ required: true }) private edge!: Edge;
+  @Input({ required: true }) private currentData!: CurrentData;
+  @Input() private evcsConfigMap: { [evcsId: string]: EdgeConfig.Component } = {};
+  @Input({ required: true }) private componentId!: string;
+
   public loading: boolean = true;
   public options: BarChartOptions;
-  public labels: Label[];
-  public datasets: ChartDataSets[];
-  public chart: Chart; // This will hold our chart info
-
+  public labels: string[];
+  public datasets: Chart.ChartDataset[];
+  public chart: Chart.Chart; // This will hold our chart info
 
   constructor(
     protected translate: TranslateService,
     public modalController: ModalController,
   ) { }
+
+  getMaxPower() {
+    const minPower = 22;
+    let maxHW = this.currentData[this.componentId + '/MaximumHardwarePower'];
+    let chargePower = this.currentData[this.componentId + '/ChargePower'];
+    maxHW = maxHW == null ? minPower : maxHW / 1000;
+    chargePower = chargePower == null ? 0 : chargePower / 1000;
+
+    const maxPower: number = chargePower < minPower || maxHW;
+    return Math.round(maxPower);
+  }
 
   ngOnInit() {
     this.options = DEFAULT_BAR_CHART_OPTIONS;
@@ -56,10 +66,10 @@ export class EvcsChartComponent implements OnInit, OnChanges {
     }
     this.loading = true;
     let index = 0;
-    for (let evcsId in this.evcsMap) {
-      let chargePower = this.edge.currentData.value.channel[evcsId + '/ChargePower'];
-      let chargePowerKW = chargePower / 1000.0;
-      let alias = this.evcsConfigMap[evcsId].properties.alias;
+    for (const evcsId in this.evcsMap) {
+      const chargePower = this.edge.currentData.value.channel[evcsId + '/ChargePower'];
+      const chargePowerKW = chargePower / 1000.0;
+      const alias = this.evcsConfigMap[evcsId].properties.alias;
       if (this.datasets[index] == null) {
         this.datasets.push({
           label: alias,
@@ -72,21 +82,10 @@ export class EvcsChartComponent implements OnInit, OnChanges {
         this.datasets[index].data = [chargePowerKW != null ? chargePowerKW : 0];
       }
       index++;
-    };
+    }
     this.loading = false;
   }
 
-  getMaxPower() {
-    let maxPower: number;
-    let minPower = 22;
-    let maxHW = this.currentData[this.componentId + '/MaximumHardwarePower'];
-    let chargePower = this.currentData[this.componentId + '/ChargePower'];
-    maxHW = maxHW == null ? minPower : maxHW / 1000;
-    chargePower = chargePower == null ? 0 : chargePower / 1000;
-
-    maxPower = chargePower < minPower || maxPower < minPower ? minPower : maxHW;
-    return Math.round(maxPower);
-  }
 }
 
 export const DEFAULT_BAR_CHART_OPTIONS: BarChartOptions = {
@@ -134,7 +133,7 @@ export const DEFAULT_BAR_CHART_OPTIONS: BarChartOptions = {
       label(tooltipItems: BarChartTooltipItem, data: Data): string {
         let value: number = tooltipItems.yLabel; //.toFixed(2);
         value = parseFloat(value.toFixed(2));
-        let label = data.datasets[tooltipItems.datasetIndex].label;
+        const label = data.datasets[tooltipItems.datasetIndex].label;
         return label + ": " + value.toLocaleString('de-DE') + " kW";
       },
     },
@@ -214,11 +213,11 @@ export type BarChartOptions = {
       }
     }]
   }
-}
+};
 
 export type BarChartTooltipItem = {
   datasetIndex: number,
   index: number,
   y: number,
   yLabel: number
-}
+};

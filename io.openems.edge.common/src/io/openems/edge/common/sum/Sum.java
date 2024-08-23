@@ -7,11 +7,13 @@ import io.openems.common.channel.Unit;
 import io.openems.common.types.OpenemsType;
 import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.Doc;
+import io.openems.edge.common.channel.DoubleReadChannel;
 import io.openems.edge.common.channel.IntegerReadChannel;
 import io.openems.edge.common.channel.LongReadChannel;
 import io.openems.edge.common.channel.StateChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.OpenemsComponent;
+import io.openems.edge.common.meta.Meta;
 import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
 import io.openems.edge.common.modbusslave.ModbusType;
 
@@ -139,6 +141,33 @@ public interface Sum extends OpenemsComponent {
 				.text("Actual AC-side battery discharge power of Energy Storage System. " //
 						+ "Negative values for charge; positive for discharge")),
 		/**
+		 * Ess: Minimum Ever Discharge Power (i.e. Maximum Ever Charge power as negative
+		 * value).
+		 *
+		 * <ul>
+		 * <li>Interface: Sum (origin: SymmetricEss))
+		 * <li>Type: Integer
+		 * <li>Unit: W
+		 * <li>Range: negative values or '0'
+		 * </ul>
+		 */
+		ESS_MIN_DISCHARGE_POWER(Doc.of(OpenemsType.INTEGER) //
+				.unit(Unit.WATT) //
+				.persistencePriority(PersistencePriority.VERY_HIGH)),
+		/**
+		 * Ess: Maximum Ever Discharge Power.
+		 *
+		 * <ul>
+		 * <li>Interface: Sum (origin: SymmetricEss)
+		 * <li>Type: Integer
+		 * <li>Unit: W
+		 * <li>Range: positive values or '0'
+		 * </ul>
+		 */
+		ESS_MAX_DISCHARGE_POWER(Doc.of(OpenemsType.INTEGER) //
+				.unit(Unit.WATT) //
+				.persistencePriority(PersistencePriority.VERY_HIGH)),
+		/**
 		 * Ess: Capacity.
 		 *
 		 * <ul>
@@ -245,6 +274,18 @@ public interface Sum extends OpenemsComponent {
 		 */
 		GRID_MAX_ACTIVE_POWER(Doc.of(OpenemsType.INTEGER) //
 				.unit(Unit.WATT) //
+				.persistencePriority(PersistencePriority.VERY_HIGH)),
+		/**
+		 * Grid: Price for Buy-from-Grid.
+		 *
+		 * <ul>
+		 * <li>Interface: Sum (origin: TimeOfUseTariff)
+		 * <li>Type: Integer
+		 * <li>Unit: Currency (see {@link Meta.ChannelId#CURRENCY}) per MWh
+		 * </ul>
+		 */
+		GRID_BUY_PRICE(Doc.of(OpenemsType.DOUBLE) //
+				.unit(Unit.MONEY_PER_MEGAWATT_HOUR) //
 				.persistencePriority(PersistencePriority.VERY_HIGH)),
 		/**
 		 * Production: Active Power.
@@ -445,7 +486,18 @@ public interface Sum extends OpenemsComponent {
 		 */
 		GRID_MODE(Doc.of(GridMode.values()) //
 				.persistencePriority(PersistencePriority.VERY_HIGH)), //
-
+		/**
+		 * Cumulated Off-Grid time.
+		 * 
+		 * <ul>
+		 * <li>Interface: Sum
+		 * <li>Type: Cumulated Seconds
+		 * </ul>
+		 */
+		GRID_MODE_OFF_GRID_TIME(Doc.of(OpenemsType.LONG) //
+				.unit(Unit.CUMULATED_SECONDS) //
+				.persistencePriority(PersistencePriority.VERY_HIGH) //
+				.text("Total Off-Grid time")), //
 		/**
 		 * Ess: Max Apparent Power.
 		 *
@@ -663,6 +715,7 @@ public interface Sum extends OpenemsComponent {
 				.channel(111, ChannelId.CONSUMPTION_ACTIVE_POWER_L3, ModbusType.FLOAT32) //
 				.channel(113, ChannelId.ESS_DISCHARGE_POWER, ModbusType.FLOAT32) //
 				.channel(115, ChannelId.GRID_MODE, ModbusType.ENUM16) //
+				.channel(116, ChannelId.GRID_MODE_OFF_GRID_TIME, ModbusType.FLOAT32) //
 				.build();
 	}
 
@@ -932,6 +985,45 @@ public interface Sum extends OpenemsComponent {
 	}
 
 	/**
+	 * Gets the Channel for {@link ChannelId#ESS_MAX_DISCHARGE_POWER}.
+	 *
+	 * @return the Channel
+	 */
+	public default IntegerReadChannel getEssMaxDischargePowerChannel() {
+		return this.channel(ChannelId.ESS_MAX_DISCHARGE_POWER);
+	}
+
+	/**
+	 * Gets the Total Maximum Ever ESS Discharge Power in [W]. See
+	 * {@link ChannelId#ESS_MAX_DISCHARGE_POWER}.
+	 *
+	 * @return the Channel {@link Value}
+	 */
+	public default Value<Integer> getEssMaxDischargePower() {
+		return this.getEssMaxDischargePowerChannel().value();
+	}
+
+	/**
+	 * Gets the Channel for {@link ChannelId#ESS_MIN_DISCHARGE_POWER}.
+	 *
+	 * @return the Channel
+	 */
+	public default IntegerReadChannel getEssMinDischargePowerChannel() {
+		return this.channel(ChannelId.ESS_MIN_DISCHARGE_POWER);
+	}
+
+	/**
+	 * Gets the Total Minimum Ever ESS Discharge Power in [W] (i.e. Maximum Ever
+	 * Charge power as negative value). See
+	 * {@link ChannelId#ESS_MIN_DISCHARGE_POWER}.
+	 *
+	 * @return the Channel {@link Value}
+	 */
+	public default Value<Integer> getEssMinDischargePower() {
+		return this.getEssMinDischargePowerChannel().value();
+	}
+
+	/**
 	 * Gets the Channel for {@link ChannelId#ESS_CAPACITY}.
 	 *
 	 * @return the Channel
@@ -1124,6 +1216,35 @@ public interface Sum extends OpenemsComponent {
 	 */
 	public default void _setGridActivePowerL3(int value) {
 		this.getGridActivePowerL3Channel().setNextValue(value);
+	}
+
+	/**
+	 * Gets the Channel for {@link ChannelId#GRID_BUY_PRICE}.
+	 *
+	 * @return the Channel
+	 */
+	public default DoubleReadChannel getGridBuyPriceChannel() {
+		return this.channel(ChannelId.GRID_BUY_PRICE);
+	}
+
+	/**
+	 * Gets the Buy-from-Grid price [Currency/MWh]. See
+	 * {@link ChannelId#GRID_BUY_PRICE}.
+	 *
+	 * @return the Channel {@link Value}
+	 */
+	public default Value<Double> getGridBuyPrice() {
+		return this.getGridBuyPriceChannel().value();
+	}
+
+	/**
+	 * Internal method to set the 'nextValue' on {@link ChannelId#GRID_BUY_PRICE}
+	 * Channel.
+	 *
+	 * @param value the next value
+	 */
+	public default void _setGridBuyPrice(Double value) {
+		this.getGridBuyPriceChannel().setNextValue(value);
 	}
 
 	/**
@@ -1767,6 +1888,35 @@ public interface Sum extends OpenemsComponent {
 	 */
 	public default void _setGridMode(GridMode value) {
 		this.getGridModeChannel().setNextValue(value);
+	}
+
+	/**
+	 * Internal method to set the 'nextValue' on
+	 * {@link ChannelId#GRID_MODE_OFF_GRID_TIME} Channel.
+	 *
+	 * @param value the next value
+	 */
+	public default void _setGridModeOffGridTime(int value) {
+		this.getGridModeOffGridTimeChannel().setNextValue(value);
+	}
+
+	/**
+	 * Gets the Channel for {@link ChannelId#GRID_MODE_OFF_GRID_TIME}.
+	 *
+	 * @return the Channel
+	 */
+	public default LongReadChannel getGridModeOffGridTimeChannel() {
+		return this.channel(ChannelId.GRID_MODE_OFF_GRID_TIME);
+	}
+
+	/**
+	 * Gets the Overall GridMode of all Energy Storage Systems. See
+	 * {@link ChannelId#GRID_MODE_OFF_GRID_TIME}.
+	 *
+	 * @return the Channel {@link Value}
+	 */
+	public default Value<Long> getGridModeOffGridTimeValue() {
+		return this.getGridModeOffGridTimeChannel().value();
 	}
 
 	/**

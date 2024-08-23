@@ -1,13 +1,14 @@
-import { formatNumber } from '@angular/common';
+// @ts-strict-ignore
 import { Component, Input, OnChanges, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
+import * as Chart from 'chart.js';
 import { DefaultTypes } from 'src/app/shared/service/defaulttypes';
+import { YAxisTitle } from 'src/app/shared/service/utils';
 
 import { QueryHistoricTimeseriesDataResponse } from '../../../shared/jsonrpc/response/queryHistoricTimeseriesDataResponse';
 import { ChannelAddress, Edge, EdgeConfig, Service } from '../../../shared/shared';
 import { AbstractHistoryChart } from '../abstracthistorychart';
-import { Data, TooltipItem } from '../shared';
 
 @Component({
   selector: 'fixDigitalOutputSingleChart',
@@ -15,12 +16,9 @@ import { Data, TooltipItem } from '../shared';
 })
 export class FixDigitalOutputSingleChartComponent extends AbstractHistoryChart implements OnInit, OnChanges, OnDestroy {
 
-  @Input() public period: DefaultTypes.HistoryPeriod;
-  @Input() public componentId: string;
+  @Input({ required: true }) public period!: DefaultTypes.HistoryPeriod;
+  @Input({ required: true }) public componentId!: string;
 
-  ngOnChanges() {
-    this.updateChart();
-  }
 
   constructor(
     protected override service: Service,
@@ -28,6 +26,10 @@ export class FixDigitalOutputSingleChartComponent extends AbstractHistoryChart i
     private route: ActivatedRoute,
   ) {
     super("fixdigitaloutput-single-chart", service, translate);
+  }
+
+  ngOnChanges() {
+    this.updateChart();
   }
 
   ngOnInit() {
@@ -39,25 +41,29 @@ export class FixDigitalOutputSingleChartComponent extends AbstractHistoryChart i
     this.unsubscribeChartRefresh();
   }
 
+  public getChartHeight(): number {
+    return window.innerHeight / 1.3;
+  }
+
   protected updateChart() {
     this.autoSubscribeChartRefresh();
     this.startSpinner();
     this.colors = [];
     this.loading = true;
     this.queryHistoricTimeseriesData(this.period.from, this.period.to).then(response => {
-      let result = (response as QueryHistoricTimeseriesDataResponse).result;
+      const result = (response as QueryHistoricTimeseriesDataResponse).result;
       // convert labels
-      let labels: Date[] = [];
-      for (let timestamp of result.timestamps) {
+      const labels: Date[] = [];
+      for (const timestamp of result.timestamps) {
         labels.push(new Date(timestamp));
       }
       this.labels = labels;
 
       // convert datasets
-      let datasets = [];
-      for (let channel in result.data) {
-        let address = ChannelAddress.fromString(channel);
-        let data = result.data[channel].map(value => {
+      const datasets: Chart.ChartDataset[] = [];
+      for (const channel in result.data) {
+        const address = ChannelAddress.fromString(channel);
+        const data = result.data[channel].map(value => {
           if (value == null) {
             return null;
           } else {
@@ -76,35 +82,27 @@ export class FixDigitalOutputSingleChartComponent extends AbstractHistoryChart i
       this.datasets = datasets;
       this.loading = false;
       this.stopSpinner();
-
     }).catch(reason => {
       console.error(reason); // TODO error message
       this.initializeChart();
       return;
+    }).finally(async () => {
+      this.unit = YAxisTitle.PERCENTAGE;
+      await this.setOptions(this.options);
+      this.stopSpinner();
     });
   }
 
   protected getChannelAddresses(edge: Edge, config: EdgeConfig): Promise<ChannelAddress[]> {
     return new Promise((resolve) => {
       const outputChannel = ChannelAddress.fromString(config.getComponentProperties(this.componentId)['outputChannelAddress']);
-      let channeladdresses = [outputChannel];
+      const channeladdresses = [outputChannel];
       resolve(channeladdresses);
     });
   }
 
   protected setLabel() {
-    let options = this.createDefaultChartOptions();
-    options.scales.yAxes[0].scaleLabel.labelString = this.translate.instant('General.percentage');
-    options.tooltips.callbacks.label = function (tooltipItem: TooltipItem, data: Data) {
-      let label = data.datasets[tooltipItem.datasetIndex].label;
-      let value = tooltipItem.yLabel;
-      return label + ": " + formatNumber(value, 'de', '1.0-0') + " %"; // TODO get locale dynamically
-    };
-    options.scales.yAxes[0].ticks.max = 100;
-    this.options = options;
+    this.options = this.createDefaultChartOptions();
   }
 
-  public getChartHeight(): number {
-    return window.innerHeight / 1.3;
-  }
 }

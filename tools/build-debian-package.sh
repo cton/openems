@@ -4,6 +4,8 @@
 
 set -e
 
+OUTPUT=$( realpath ${1:-.} )
+
 DEBIAN_UI_LOCATION=tools/debian/usr/share/openems/www
 DEBIAN_EDGE_LOCATION=tools/debian/usr/lib/openems/
 
@@ -28,7 +30,7 @@ initialize_environment() {
     source $SCRIPT_DIR/common.sh
     common_initialize_environment
     common_build_snapshot_version
-    
+
     DEB_FILE="${PACKAGE_NAME}.deb"
     VERSION_FILE="${PACKAGE_NAME}.version"
 }
@@ -37,8 +39,9 @@ print_header() {
     echo "#"
     echo "# Building Debian Package"
     echo "#"
-    echo "# Theme: ${THEME}"
-    echo "# Version: ${VERSION}"
+    echo -e "# Theme:\t${THEME}"
+    echo -e "# Version:\t${VERSION}"
+    echo -e "# Destination:\t${OUTPUT}"
     echo "#"
 }
 
@@ -51,6 +54,12 @@ check_dependencies() {
 prepare_deb_template() {
     echo "# Build Debian package"
     sed --in-place "s/^\(Version: \).*$/\1$VERSION/" tools/debian/DEBIAN/control
+
+    for script in preinst postinst prerm postrm
+    do
+	    script="tools/debian/DEBIAN/$script"
+        [ -f $script ] && chmod 755 $script
+    done
 
     echo "## Add OpenEMS Edge"
     if [ -f "$DEBIAN_EDGE_LOCATION/openems.jar" ]; then
@@ -75,13 +84,13 @@ prepare_deb_template() {
 
 build_deb() {
     cd tools
-    dpkg-deb -Zxz --build "debian" "../${DEB_FILE}"
+    dpkg-deb -Zxz --build "debian" "${OUTPUT}/${DEB_FILE}"
     echo "## Built ${DEB_FILE}"
     cd ..
 }
 
 create_version_file() {
-    echo $VERSION > $VERSION_FILE
+    echo $VERSION > "${OUTPUT}/${VERSION_FILE}"
 }
 
 clean_deb_template() {

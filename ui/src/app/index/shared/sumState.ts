@@ -1,14 +1,14 @@
 import { Component, Input, OnInit } from "@angular/core";
 import { TranslateService } from "@ngx-translate/core";
-import { Filter } from "../filter/filter.component";
-import { Role } from "src/app/shared/type/role";
 import { Service } from "src/app/shared/shared";
+import { Role } from "src/app/shared/type/role";
+import { Filter } from "../filter/filter.component";
 
 export enum SumState {
   OK = 'OK',
   INFO = 'INFO',
   WARNING = 'WARNING',
-  FAULT = 'FAULT'
+  FAULT = 'FAULT',
 }
 
 @Component({
@@ -44,15 +44,15 @@ export enum SumState {
 })
 export class SumStateComponent implements OnInit {
 
-  protected readonly SUM_STATE = SumState;
   @Input() protected sumState: SumState = SumState.OK;
   @Input() protected isEdgeOnline: boolean = false;
   protected isAtLeastInstaller: boolean = false;
+  protected readonly SUM_STATE = SumState;
 
   constructor(private service: Service) { }
 
   ngOnInit() {
-    let user = this.service.metadata?.value?.user ?? null;
+    const user = this.service.metadata?.value?.user ?? null;
 
     if (user) {
       this.isAtLeastInstaller = Role.isAtLeast(user.globalRole, Role.INSTALLER);

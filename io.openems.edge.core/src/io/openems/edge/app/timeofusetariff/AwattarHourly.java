@@ -2,6 +2,7 @@ package io.openems.edge.app.timeofusetariff;
 
 import static io.openems.edge.app.common.props.CommonProps.alias;
 import static io.openems.edge.app.common.props.CommonProps.defaultDef;
+import static io.openems.edge.core.appmanager.validator.Checkables.checkHome;
 
 import java.util.Map;
 import java.util.function.Function;
@@ -9,6 +10,7 @@ import java.util.function.Function;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 
 import com.google.common.collect.Lists;
@@ -39,7 +41,9 @@ import io.openems.edge.core.appmanager.TranslationUtil;
 import io.openems.edge.core.appmanager.Type;
 import io.openems.edge.core.appmanager.Type.Parameter.BundleParameter;
 import io.openems.edge.core.appmanager.dependency.Tasks;
+import io.openems.edge.core.appmanager.dependency.aggregatetask.SchedulerByCentralOrderConfiguration.SchedulerComponent;
 import io.openems.edge.core.appmanager.formly.JsonFormlyUtil;
+import io.openems.edge.core.appmanager.validator.ValidatorConfig;
 
 /**
  * Describes a App for AwattarHourly.
@@ -53,7 +57,6 @@ import io.openems.edge.core.appmanager.formly.JsonFormlyUtil;
     "properties":{
     	"CTRL_ESS_TIME_OF_USE_TARIFF_ID": "ctrlEssTimeOfUseTariff0",
     	"TIME_OF_USE_TARIFF_PROVIDER_ID": "timeOfUseTariff0",
-    	"CONTROL_MODE": {@link ControlMode},
     	"ZONE": {@link Zone},
     },
     "appDescriptor": {
@@ -62,7 +65,7 @@ import io.openems.edge.core.appmanager.formly.JsonFormlyUtil;
   }
  * </pre>
  */
-@org.osgi.service.component.annotations.Component(name = "App.TimeOfUseTariff.Awattar")
+@Component(name = "App.TimeOfUseTariff.Awattar")
 public class AwattarHourly extends AbstractOpenemsAppWithProps<AwattarHourly, Property, Type.Parameter.BundleParameter>
 		implements OpenemsApp {
 
@@ -133,7 +136,8 @@ public class AwattarHourly extends AbstractOpenemsAppWithProps<AwattarHourly, Pr
 
 			return AppConfiguration.create() //
 					.addTask(Tasks.component(components)) //
-					.addTask(Tasks.scheduler(ctrlEssTimeOfUseTariffId, "ctrlBalancing0")) //
+					.addTask(Tasks.schedulerByCentralOrder(new SchedulerComponent(ctrlEssTimeOfUseTariffId,
+							"Controller.Ess.Time-Of-Use-Tariff", this.getAppId()))) //
 					.addTask(Tasks.persistencePredictor("_sum/UnmanagedConsumptionActivePower")) //
 					.build();
 		};
@@ -159,6 +163,12 @@ public class AwattarHourly extends AbstractOpenemsAppWithProps<AwattarHourly, Pr
 	@Override
 	public OpenemsAppCardinality getCardinality() {
 		return OpenemsAppCardinality.SINGLE_IN_CATEGORY;
+	}
+
+	@Override
+	protected ValidatorConfig.Builder getValidateBuilder() {
+		return ValidatorConfig.create() //
+				.setCompatibleCheckableConfigs(checkHome());
 	}
 
 	@Override

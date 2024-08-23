@@ -30,11 +30,14 @@ import org.slf4j.LoggerFactory;
 
 import com.google.gson.JsonObject;
 
+import io.openems.backend.common.alerting.OfflineEdgeAlertingSetting;
+import io.openems.backend.common.alerting.SumStateAlertingSetting;
+import io.openems.backend.common.alerting.UserAlertingSettings;
 import io.openems.backend.common.metadata.AbstractMetadata;
-import io.openems.backend.common.metadata.UserAlertingSettings;
 import io.openems.backend.common.metadata.Edge;
 import io.openems.backend.common.metadata.EdgeHandler;
 import io.openems.backend.common.metadata.Metadata;
+import io.openems.backend.common.metadata.MetadataUtils;
 import io.openems.backend.common.metadata.SimpleEdgeHandler;
 import io.openems.backend.common.metadata.User;
 import io.openems.common.channel.Level;
@@ -46,7 +49,6 @@ import io.openems.common.jsonrpc.request.GetEdgesRequest.PaginationOptions;
 import io.openems.common.jsonrpc.response.GetEdgesResponse.EdgeMetadata;
 import io.openems.common.session.Language;
 import io.openems.common.session.Role;
-import io.openems.common.utils.StringUtils;
 import io.openems.common.utils.ThreadPoolUtils;
 
 @Designate(ocd = Config.class, factory = false)
@@ -77,10 +79,19 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 	private JsonObject settings = new JsonObject();
 
 	@Activate
-	public MetadataDummy(@Reference EventAdmin eventadmin) {
+	public MetadataDummy(@Reference EventAdmin eventadmin, Config config) {
 		super("Metadata.Dummy");
 		this.eventAdmin = eventadmin;
 		this.logInfo(this.log, "Activate");
+
+		// Prefill
+		this.logInfo(this.log, "Prefilling Edges [" //
+				+ String.format(config.edgeIdTemplate(), 0) + "..."
+				+ String.format(config.edgeIdTemplate(), config.edgeIdMax()) + "]");
+		for (var i = 0; i < config.edgeIdMax() + 1; i++) {
+			this.createEdge(config.edgeIdTemplate(), i);
+		}
+		this.nextEdgeId.set(config.edgeIdMax() + 1);
 
 		// Allow the services some time to settle
 		this.executor.schedule(() -> {
@@ -164,7 +175,18 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 		var edge = new MyEdge(this, edgeId, apikey, setupPassword, "OpenEMS Edge #" + id, "", "");
 		this.edges.put(edgeId, edge);
 		return Optional.ofNullable(edgeId);
+	}
 
+	/**
+	 * Creates and adds a {@link MyEdge}.
+	 * 
+	 * @param edgeIdTemplate the Edge-ID template
+	 * @param i              value to be filled in the template
+	 */
+	private void createEdge(String edgeIdTemplate, int i) {
+		var edgeId = String.format(edgeIdTemplate, i);
+		var edge = new MyEdge(this, edgeId, edgeId, edgeId, "OpenEMS Edge #" + i, "", "");
+		this.edges.put(edgeId, edge);
 	}
 
 	@Override
@@ -276,8 +298,8 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 	}
 
 	@Override
-	public List<UserAlertingSettings> getUserAlertingSettings(String edgeId) {
-		throw new UnsupportedOperationException("DummyMetadata.getUserAlertingSettings() is not implemented");
+	public Optional<String> getEmsTypeForEdge(String edgeId) {
+		throw new UnsupportedOperationException("DummyMetadata.getEmsTypeForEdge() is not implemented");
 	}
 
 	@Override
@@ -286,50 +308,29 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 	}
 
 	@Override
-	public void setUserAlertingSettings(User user, String edgeId, List<UserAlertingSettings> users) {
+	public List<UserAlertingSettings> getUserAlertingSettings(String edgeId) {
+		throw new UnsupportedOperationException("DummyMetadata.getUserAlertingSettings() is not implemented");
+	}
+
+	@Override
+	public List<OfflineEdgeAlertingSetting> getEdgeOfflineAlertingSettings(String edgeId) throws OpenemsException {
+		throw new UnsupportedOperationException("DummyMetadata.getEdgeOfflineAlertingSettings() is not implemented");
+	}
+
+	@Override
+	public List<SumStateAlertingSetting> getSumStateAlertingSettings(String edgeId) throws OpenemsException {
+		throw new UnsupportedOperationException("DummyMetadata.getSumStateAlertingSettings() is not implemented");
+	}
+
+	@Override
+	public void setUserAlertingSettings(User user, String edgeId, List<UserAlertingSettings> settings) {
 		throw new UnsupportedOperationException("DummyMetadata.setUserAlertingSettings() is not implemented");
 	}
 
 	@Override
 	public List<EdgeMetadata> getPageDevice(User user, PaginationOptions paginationOptions)
 			throws OpenemsNamedException {
-		var pagesStream = this.edges.values().stream();
-		final var query = paginationOptions.getQuery();
-		if (query != null) {
-			pagesStream = pagesStream.filter(//
-					edge -> StringUtils.containsWithNullCheck(edge.getId(), query) //
-							|| StringUtils.containsWithNullCheck(edge.getComment(), query) //
-							|| StringUtils.containsWithNullCheck(edge.getProducttype(), query) //
-			);
-		}
-		final var searchParams = paginationOptions.getSearchParams();
-		if (searchParams != null) {
-			if (searchParams.searchIsOnline()) {
-				pagesStream = pagesStream.filter(edge -> edge.isOnline() == searchParams.isOnline());
-			}
-			if (searchParams.productTypes() != null && !searchParams.productTypes().isEmpty()) {
-				pagesStream = pagesStream.filter(edge -> searchParams.productTypes().contains(edge.getProducttype()));
-			}
-			// TODO sum state filter
-		}
-
-		return pagesStream //
-				.sorted((s1, s2) -> s1.getId().compareTo(s2.getId())) //
-				.skip(paginationOptions.getPage() * paginationOptions.getLimit()) //
-				.limit(paginationOptions.getLimit()) //
-				.peek(t -> user.setRole(t.getId(), Role.ADMIN)) //
-				.map(myEdge -> {
-					return new EdgeMetadata(//
-							myEdge.getId(), //
-							myEdge.getComment(), //
-							myEdge.getProducttype(), //
-							myEdge.getVersion(), //
-							Role.ADMIN, //
-							myEdge.isOnline(), //
-							myEdge.getLastmessage(), //
-							null, // firstSetupProtocol
-							Level.OK);
-				}).toList();
+		return MetadataUtils.getPageDevice(user, this.edges.values(), paginationOptions);
 	}
 
 	@Override
@@ -354,6 +355,11 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 	}
 
 	@Override
+	public Optional<Level> getSumState(String edgeId) {
+		throw new UnsupportedOperationException("DummyMetadata.getSumState() is not implemented");
+	}
+
+	@Override
 	public void logGenericSystemLog(GenericSystemLog systemLog) {
 		this.logInfo(this.log,
 				"%s on %s executed %s [%s]".formatted(systemLog.user().getId(), systemLog.edgeId(), systemLog.teaser(),
@@ -366,5 +372,4 @@ public class MetadataDummy extends AbstractMetadata implements Metadata, EventHa
 	public void updateUserSettings(User user, JsonObject settings) {
 		this.settings = settings == null ? new JsonObject() : settings;
 	}
-
 }

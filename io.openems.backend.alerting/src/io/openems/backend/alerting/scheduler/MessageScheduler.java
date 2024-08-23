@@ -52,16 +52,18 @@ public class MessageScheduler<T extends Message> {
 	 * Remove message from scheduler.
 	 *
 	 * @param msgId for message to remove
+	 * @return the removed Message or null, if none was found
 	 */
-	public void remove(String msgId) {
+	public T remove(String msgId) {
 		if (msgId == null) {
-			return;
+			return null;
 		}
 		synchronized (this) {
 			var msg = this.messageForId.remove(msgId);
 			if (msg != null) {
 				this.queue.remove(msg);
 			}
+			return msg;
 		}
 	}
 
@@ -119,7 +121,7 @@ public class MessageScheduler<T extends Message> {
 
 	private T poll() {
 		synchronized (this) {
-			var msg = this.queue.poll();
+			final var msg = this.queue.poll();
 			if (msg != null) {
 				this.messageForId.remove(msg.getId());
 			}
