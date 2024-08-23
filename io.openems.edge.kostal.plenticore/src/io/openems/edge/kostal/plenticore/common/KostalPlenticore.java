@@ -8,6 +8,7 @@ import io.openems.common.types.OpenemsType;
 import io.openems.edge.common.channel.Doc;
 import io.openems.edge.kostal.plenticore.charger.AbstractKostalPlenticoreCharger;
 import io.openems.edge.kostal.plenticore.charger.KostalPlenticoreCharger1;
+import io.openems.edge.kostal.plenticore.common.enums.BatteryCurrentDirection;
 import io.openems.edge.kostal.plenticore.common.enums.ControlMode;
 
 public interface KostalPlenticore {

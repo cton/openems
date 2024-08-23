@@ -127,7 +127,7 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 
 						m(KostalPlenticore.ChannelId.TOTAL_AC_ACTIVE_POWER,
 								new FloatDoublewordElement(172).wordOrder(WordOrder.LSWMSW)), //
-						m(KostalPlenticore.ChannelId.TOTAL_AC_REACTIVE_POWER,
+						m(this.reactivePowerChannelId,
 								new FloatDoublewordElement(174).wordOrder(WordOrder.LSWMSW)), //
 						new DummyRegisterElement(176, 177), //
 						m(KostalPlenticore.ChannelId.TOTAL_AC_APPARENT_POWER,

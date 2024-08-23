@@ -14,8 +14,6 @@ import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
@@ -116,7 +114,6 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 				OpenemsComponent.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
 				SymmetricEss.ChannelId.values(), //
-				ManagedSymmetricEss.ChannelId.values(), //
 				HybridEss.ChannelId.values(), //
 				KostalPlenticore.ChannelId.values(), //
 				KostalPlenticoreHybridEss.ChannelId.values());
@@ -125,10 +122,7 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 	@Override
 	public String debugLog() {
 		return "SoC:" + this.getSoc().asString() //
-				+ "|L:" + this.getActivePower().asString() //
-				+ "|Allowed:"
-				+ this.channel(ManagedSymmetricEss.ChannelId.ALLOWED_CHARGE_POWER).value().asStringWithoutUnit() + ";"
-				+ this.channel(ManagedSymmetricEss.ChannelId.ALLOWED_DISCHARGE_POWER).value().asString(); //
+				+ "|L:" + this.getActivePower().asString();
 	}
 
 	@Override

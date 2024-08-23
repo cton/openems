@@ -34,7 +34,7 @@ import io.openems.edge.timedata.api.TimedataProvider;
 })
 
 public class KostalPlenticoreCharger2 extends AbstractKostalPlenticoreCharger
-		implements KostalPlenticoreCharger, EssDcCharger, ModbusComponent, OpenemsComponent, EventHandler, TimedataProvider {
+		implements EssDcCharger, ModbusComponent, OpenemsComponent, EventHandler, TimedataProvider {
 
 	@Reference
 	protected ConfigurationAdmin cm;
