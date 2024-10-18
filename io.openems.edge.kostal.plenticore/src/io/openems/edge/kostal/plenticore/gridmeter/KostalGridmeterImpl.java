@@ -93,7 +93,7 @@ public class KostalGridmeterImpl extends AbstractOpenemsModbusComponent implemen
 	}
 	
 	@Override
-	protected ModbusProtocol defineModbusProtocol() throws OpenemsException {
+	protected ModbusProtocol defineModbusProtocol() {
 		return new ModbusProtocol(this, //
 				// Active and reactive power, Power factor and frequency
 				new FC3ReadRegistersTask(218, Priority.HIGH, //

@@ -3,7 +3,6 @@ package io.openems.edge.kostal.plenticore.common;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.bridge.modbus.api.AbstractOpenemsModbusComponent;
 import io.openems.edge.bridge.modbus.api.ModbusProtocol;
@@ -59,7 +58,7 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 		this.calculateDcDischargeEnergy = new CalculateEnergyFromPower(this, dcDischargeEnergyChannelId);
 	}
 
-	protected ModbusProtocol defineModbusProtocol() throws OpenemsException {
+	protected ModbusProtocol defineModbusProtocol() {
 		var protocol = new ModbusProtocol(this, //
 				new FC3ReadRegistersTask(6, Priority.LOW, //
 						m(KostalPlenticore.ChannelId.ARTICLE_NUMBER, new StringWordElement(6, 8)), //

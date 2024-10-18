@@ -7,6 +7,8 @@
 -runproperties:\
 	org.osgi.service.http.port=8080,\
 	felix.cm.dir=c:/openems/config,\
+	felix.fileinstall.log.level=5,\
+	felix.fileinstall.dir=D:/Projekte/openems-2023-11/openems/io.openems.edge.kostal.plenticore/generated,\
 	openems.data.dir=c:/openems/data,\
 	org.apache.felix.eventadmin.Timeout=0,\
 	org.ops4j.pax.logging.DefaultServiceLog.level=INFO
@@ -144,6 +146,7 @@
 	bnd.identity;id='io.openems.edge.kaco.blueplanet.hybrid10',\
 	bnd.identity;id='io.openems.edge.katek.edcom',\
 	bnd.identity;id='io.openems.edge.kostal.piko',\
+	bnd.identity;id='io.openems.edge.kostal.plenticore',\
 	bnd.identity;id='io.openems.edge.meter.abb',\
 	bnd.identity;id='io.openems.edge.meter.artemes.am2',\
 	bnd.identity;id='io.openems.edge.meter.bcontrol.em300',\
@@ -319,6 +322,7 @@
 	io.openems.edge.kaco.blueplanet.hybrid10;version=snapshot,\
 	io.openems.edge.katek.edcom;version=snapshot,\
 	io.openems.edge.kostal.piko;version=snapshot,\
+	io.openems.edge.kostal.plenticore;version=snapshot,\
 	io.openems.edge.meter.abb;version=snapshot,\
 	io.openems.edge.meter.api;version=snapshot,\
 	io.openems.edge.meter.artemes.am2;version=snapshot,\
