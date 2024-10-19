@@ -5,7 +5,6 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ConfigurationPolicy;
-import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.osgi.service.component.annotations.ReferencePolicy;
@@ -14,14 +13,16 @@ import org.osgi.service.event.Event;
 import org.osgi.service.event.EventHandler;
 import org.osgi.service.event.propertytypes.EventTopics;
 import org.osgi.service.metatype.annotations.Designate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
-import io.openems.common.types.ChannelAddress;
-import io.openems.common.types.OpenemsType;
 import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ModbusComponent;
 import io.openems.edge.common.channel.Channel;
+import io.openems.edge.common.channel.FloatWriteChannel;
+import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.event.EdgeEventConstants;
@@ -49,10 +50,12 @@ import io.openems.edge.timedata.api.TimedataProvider;
 		EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
 public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
-		implements KostalPlenticoreHybridEss, KostalPlenticore, SymmetricEss, HybridEss, ModbusComponent,
+		implements KostalPlenticoreHybridEss, KostalPlenticore, ManagedSymmetricEss, SymmetricEss, HybridEss, ModbusComponent,
 		OpenemsComponent, TimedataProvider, EventHandler, ModbusSlave {
 
 	private static final int MAX_POWER_RAMP = 500; // [W/sec]
+	
+	private final Logger log = LoggerFactory.getLogger(KostalPlenticoreHybridEssImpl.class);
 
 	private Config config;
 
@@ -83,23 +86,20 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 		}
 		this._setCapacity(this.config.capacity());
 		this._setGridMode(GridMode.ON_GRID);
+		this._setMaxApparentPower(10000);
+		//this._setAllowedChargePower(this.config.maxBatteryPower());
+		//this._setAllowedDischargePower(this.config.maxBatteryPower());
 		// Set Max-Apparent-Power
-		this.timedata.getLatestValue(new ChannelAddress(config.id(), SymmetricEss.ChannelId.MAX_APPARENT_POWER.id()))
-				.thenAccept(latestValue -> {
-					Integer lastMaxApparentPower = TypeUtils.getAsType(OpenemsType.INTEGER, latestValue);
-					if (lastMaxApparentPower != null
-							&& lastMaxApparentPower != 10_000 /* throw away value that was previously fixed */) {
-						this._setMaxApparentPower(lastMaxApparentPower);
-					} else {
-						this._setMaxApparentPower(MAX_POWER_RAMP); // start low
-					}
-				});
-	}
-
-	@Override
-	@Deactivate
-	protected void deactivate() {
-		super.deactivate();
+		// this.timedata.getLatestValue(new ChannelAddress(config.id(), SymmetricEss.ChannelId.MAX_APPARENT_POWER.id()))
+		// 		.thenAccept(latestValue -> {
+		// 			Integer lastMaxApparentPower = TypeUtils.getAsType(OpenemsType.INTEGER, latestValue);
+		// 			if (lastMaxApparentPower != null
+		// 					&& lastMaxApparentPower != 10_000 /* throw away value that was previously fixed */) {
+		// 				this._setMaxApparentPower(lastMaxApparentPower);
+		// 			} else {
+		// 				this._setMaxApparentPower(MAX_POWER_RAMP); // start low
+		// 			}
+		// 		});
 	}
 
 	public KostalPlenticoreHybridEssImpl() throws OpenemsNamedException {
@@ -114,6 +114,7 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 				OpenemsComponent.ChannelId.values(), //
 				ModbusComponent.ChannelId.values(), //
 				SymmetricEss.ChannelId.values(), //
+				ManagedSymmetricEss.ChannelId.values(), //
 				HybridEss.ChannelId.values(), //
 				KostalPlenticore.ChannelId.values(), //
 				KostalPlenticoreHybridEss.ChannelId.values());
@@ -185,5 +186,56 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 			this._setMaxApparentPower(Math.abs(activePower) + MAX_POWER_RAMP);
 		}
 
+	}
+
+	@Override
+	public Power getPower() {
+		return this.power;
+	}
+
+	@Override
+	public void applyPower(int activePower, int reactivePower) throws OpenemsNamedException {
+		if (this.config.readOnlyMode()) {
+			return;
+		}
+		this.logInfo(this.log, "Set ActivePower to " + activePower);
+		int pvProduction = TypeUtils.max(0, this.calculatePvProduction());
+		// Value<Integer> gridActivePower = this.sum.getGridActivePower();
+		Value<Integer> essActivePower = this.getActivePower();
+		boolean pidEnabled = this.power.isPidEnabled();
+		// System.out.println(pvProduction+" W; " + this.getMaxApparentPower().orElse(0)
+		// +" VA; " + activePower +" W; "+ reactivePower+" VAr; "+ gridActivePower +" W;
+		// "+essActivePower +" W; "+ pidEnabled);
+
+		// TODO PV curtail: (surplus power == setpoint && battery soc == 100% => PV
+		// curtail)
+		int chargePowerSetpoint;
+		if (activePower < 0) {
+			chargePowerSetpoint = activePower * -1 + pvProduction;
+			//this.logInfo(this.log, "Charge Battery with " + chargePowerSetpoint);
+		}
+		if (pvProduction >= activePower) {
+			// Set-Point is positive && less than PV-Production -> feed PV partly to grid +
+			// charge battery
+			// On Surplus Feed-In PV == Set-Point => CHARGE_BAT 0
+			chargePowerSetpoint = pvProduction - activePower;
+			//this.logInfo(this.log, "Charge Battery with " + chargePowerSetpoint);
+
+		} else {
+			// Set-Point is positive && bigger than PV-Production -> feed all PV to grid +
+			// discharge battery
+			chargePowerSetpoint = activePower - pvProduction;
+			//this.logInfo(this.log, "DISCharge Battery with "+ chargePowerSetpoint);
+
+		}
+
+		FloatWriteChannel setActivePowerChannel = this
+				.channel(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER_SETPOINT);
+		setActivePowerChannel.setNextWriteValue(Float.intBitsToFloat(chargePowerSetpoint));
+	}
+
+	@Override
+	public int getPowerPrecision() {
+		return 1;
 	}
 }
