@@ -126,8 +126,7 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 
 						m(KostalPlenticore.ChannelId.TOTAL_AC_ACTIVE_POWER,
 								new FloatDoublewordElement(172).wordOrder(WordOrder.LSWMSW)), //
-						m(this.reactivePowerChannelId,
-								new FloatDoublewordElement(174).wordOrder(WordOrder.LSWMSW)), //
+						m(this.reactivePowerChannelId, new FloatDoublewordElement(174).wordOrder(WordOrder.LSWMSW)), //
 						new DummyRegisterElement(176, 177), //
 						m(KostalPlenticore.ChannelId.TOTAL_AC_APPARENT_POWER,
 								new FloatDoublewordElement(178).wordOrder(WordOrder.LSWMSW)), //
@@ -164,13 +163,11 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 				new FC16WriteRegistersTask(1034, //
 						m(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER_SETPOINT,
 								new FloatDoublewordElement(1034).wordOrder(WordOrder.LSWMSW))), //
-				new FC3ReadRegistersTask(1076, Priority.HIGH, //
-						m(KostalPlenticore.ChannelId.MAXIMUM_CHARGE_POWER_LIMIT,
-								new FloatDoublewordElement(1076).wordOrder(WordOrder.LSWMSW)), //
-						m(KostalPlenticore.ChannelId.MAXIMUM_DISCHARGE_POWER_LIMIT,
-								new FloatDoublewordElement(1078).wordOrder(WordOrder.LSWMSW)), //
-						m(KostalPlenticore.ChannelId.BATTERY_MANAGEMENT_MODE, new UnsignedWordElement(1080))
-				)); //
+				new FC3ReadRegistersTask(1038, Priority.HIGH, //
+						m(KostalPlenticore.ChannelId.MAXIMUM_CHARGE_POWER_LIMIT, new FloatDoublewordElement(1038).wordOrder(WordOrder.LSWMSW)),
+						m(KostalPlenticore.ChannelId.MAXIMUM_DISCHARGE_POWER_LIMIT, new FloatDoublewordElement(1040).wordOrder(WordOrder.LSWMSW)))
+
+				); //
 		return protocol;
 	}
 
@@ -205,14 +202,11 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 
 	protected void updatePowerAndEnergyChannels() {
 		if (this.chargers != null && this.chargers.size() > 0) {
-			var productionPower = this.calculatePvProduction();
 			final Channel<Float> pBattery1Channel = this.channel(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER);
 			var dcDischargePower = pBattery1Channel.value().orElse(0f);
-			var acActivePower = TypeUtils.sum(productionPower, Math.round(dcDischargePower));
-			
+			final Channel<Float> acActivePowerChannel = this.channel(KostalPlenticore.ChannelId.TOTAL_AC_ACTIVE_POWER);
+			var acActivePower = acActivePowerChannel.value().orElse(0f).intValue();
 
-			
-			
 			/*
 			 * Update AC Active Power
 			 */
@@ -222,7 +216,7 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 			/*
 			 * Calculate AC Energy
 			 */
-			if (acActivePower == null) {
+			if (acActivePower == 0) {
 				// Not available
 				this.calculateAcChargeEnergy.update(null);
 				this.calculateAcDischargeEnergy.update(null);
@@ -258,7 +252,7 @@ public abstract class AbstractKostalPlenticore extends AbstractOpenemsModbusComp
 				this.calculateDcChargeEnergy.update(Math.round(dcDischargePower * -1));
 				this.calculateDcDischargeEnergy.update(0);
 			}
-			
+
 		}
 	}
 }

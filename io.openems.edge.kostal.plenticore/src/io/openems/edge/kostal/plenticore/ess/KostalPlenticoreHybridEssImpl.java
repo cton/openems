@@ -1,5 +1,7 @@
 package io.openems.edge.kostal.plenticore.ess;
 
+import static io.openems.edge.common.cycle.Cycle.DEFAULT_CYCLE_TIME;
+
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -20,11 +22,11 @@ import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.bridge.modbus.api.BridgeModbus;
 import io.openems.edge.bridge.modbus.api.ModbusComponent;
-import io.openems.edge.common.channel.Channel;
 import io.openems.edge.common.channel.FloatWriteChannel;
 import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
+import io.openems.edge.common.cycle.Cycle;
 import io.openems.edge.common.event.EdgeEventConstants;
 import io.openems.edge.common.modbusslave.ModbusSlave;
 import io.openems.edge.common.modbusslave.ModbusSlaveNatureTable;
@@ -34,6 +36,7 @@ import io.openems.edge.common.type.TypeUtils;
 import io.openems.edge.ess.api.HybridEss;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.ess.api.SymmetricEss;
+import io.openems.edge.ess.generic.common.CycleProvider;
 import io.openems.edge.ess.power.api.Power;
 import io.openems.edge.kostal.plenticore.common.AbstractKostalPlenticore;
 import io.openems.edge.kostal.plenticore.common.KostalPlenticore;
@@ -50,17 +53,20 @@ import io.openems.edge.timedata.api.TimedataProvider;
 		EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
 public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
-		implements KostalPlenticoreHybridEss, KostalPlenticore, ManagedSymmetricEss, SymmetricEss, HybridEss, ModbusComponent,
-		OpenemsComponent, TimedataProvider, EventHandler, ModbusSlave {
-
-	private static final int MAX_POWER_RAMP = 500; // [W/sec]
+		implements KostalPlenticoreHybridEss, KostalPlenticore, ManagedSymmetricEss, SymmetricEss, HybridEss,
+		ModbusComponent, OpenemsComponent, TimedataProvider, EventHandler, ModbusSlave, CycleProvider {
 	
+	private final AllowedChargeDischargeHandler allowedChargeDischargeHandler = new AllowedChargeDischargeHandler(this);
+
 	private final Logger log = LoggerFactory.getLogger(KostalPlenticoreHybridEssImpl.class);
 
 	private Config config;
 
 	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.OPTIONAL)
 	private volatile Timedata timedata = null;
+	
+	@Reference
+	private Cycle cycle;
 
 	@Reference
 	protected ConfigurationAdmin cm;
@@ -87,19 +93,6 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 		this._setCapacity(this.config.capacity());
 		this._setGridMode(GridMode.ON_GRID);
 		this._setMaxApparentPower(10000);
-		//this._setAllowedChargePower(this.config.maxBatteryPower());
-		//this._setAllowedDischargePower(this.config.maxBatteryPower());
-		// Set Max-Apparent-Power
-		// this.timedata.getLatestValue(new ChannelAddress(config.id(), SymmetricEss.ChannelId.MAX_APPARENT_POWER.id()))
-		// 		.thenAccept(latestValue -> {
-		// 			Integer lastMaxApparentPower = TypeUtils.getAsType(OpenemsType.INTEGER, latestValue);
-		// 			if (lastMaxApparentPower != null
-		// 					&& lastMaxApparentPower != 10_000 /* throw away value that was previously fixed */) {
-		// 				this._setMaxApparentPower(lastMaxApparentPower);
-		// 			} else {
-		// 				this._setMaxApparentPower(MAX_POWER_RAMP); // start low
-		// 			}
-		// 		});
 	}
 
 	public KostalPlenticoreHybridEssImpl() throws OpenemsNamedException {
@@ -135,6 +128,9 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 		switch (event.getTopic()) {
 		case EdgeEventConstants.TOPIC_CYCLE_BEFORE_PROCESS_IMAGE:
 			this.updatePowerAndEnergyChannels();
+			break;
+		case EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE:
+			this.allowedChargeDischargeHandler.accept(this.componentManager);
 			break;
 		}
 	}
@@ -173,69 +169,52 @@ public class KostalPlenticoreHybridEssImpl extends AbstractKostalPlenticore
 	}
 
 	@Override
-	protected void updatePowerAndEnergyChannels() {
-		super.updatePowerAndEnergyChannels();
-
-		var productionPower = this.calculatePvProduction();
-		final Channel<Float> pBattery1Channel = this.channel(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER);
-		var dcDischargePower = pBattery1Channel.value().orElse(0f);
-		var activePower = Math.round(dcDischargePower - productionPower) * -1; // invert
-
-		// Handle MaxApparentPower
-		if (Math.abs(activePower) + MAX_POWER_RAMP > this.getMaxApparentPower().orElse(Integer.MAX_VALUE)) {
-			this._setMaxApparentPower(Math.abs(activePower) + MAX_POWER_RAMP);
-		}
-
-	}
-
-	@Override
 	public Power getPower() {
 		return this.power;
 	}
 
 	@Override
 	public void applyPower(int activePower, int reactivePower) throws OpenemsNamedException {
-		if (this.config.readOnlyMode()) {
-			return;
-		}
-		this.logInfo(this.log, "Set ActivePower to " + activePower);
+		
 		int pvProduction = TypeUtils.max(0, this.calculatePvProduction());
-		// Value<Integer> gridActivePower = this.sum.getGridActivePower();
 		Value<Integer> essActivePower = this.getActivePower();
 		boolean pidEnabled = this.power.isPidEnabled();
-		// System.out.println(pvProduction+" W; " + this.getMaxApparentPower().orElse(0)
-		// +" VA; " + activePower +" W; "+ reactivePower+" VAr; "+ gridActivePower +" W;
-		// "+essActivePower +" W; "+ pidEnabled);
 
 		// TODO PV curtail: (surplus power == setpoint && battery soc == 100% => PV
 		// curtail)
 		int chargePowerSetpoint;
 		if (activePower < 0) {
 			chargePowerSetpoint = activePower * -1 + pvProduction;
-			//this.logInfo(this.log, "Charge Battery with " + chargePowerSetpoint);
 		}
 		if (pvProduction >= activePower) {
 			// Set-Point is positive && less than PV-Production -> feed PV partly to grid +
 			// charge battery
 			// On Surplus Feed-In PV == Set-Point => CHARGE_BAT 0
-			chargePowerSetpoint = pvProduction - activePower;
-			//this.logInfo(this.log, "Charge Battery with " + chargePowerSetpoint);
+			chargePowerSetpoint = (pvProduction - activePower) * -1;
 
 		} else {
 			// Set-Point is positive && bigger than PV-Production -> feed all PV to grid +
 			// discharge battery
 			chargePowerSetpoint = activePower - pvProduction;
-			//this.logInfo(this.log, "DISCharge Battery with "+ chargePowerSetpoint);
 
 		}
+		this.logInfo(this.log, "PV: " + pvProduction + " W; Batt: " + this.getDcDischargePower() + "; " + activePower
+				+ " W; " + essActivePower + "; Target Charge Power: " + chargePowerSetpoint + " W; " + pidEnabled);
+		if (!this.config.readOnlyMode()) {
 
-		FloatWriteChannel setActivePowerChannel = this
-				.channel(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER_SETPOINT);
-		setActivePowerChannel.setNextWriteValue(Float.intBitsToFloat(chargePowerSetpoint));
+			FloatWriteChannel setActivePowerChannel = this
+					.channel(KostalPlenticore.ChannelId.BATTERY_CHARGE_POWER_SETPOINT);
+			setActivePowerChannel.setNextWriteValue(Float.valueOf(chargePowerSetpoint));
+		}
 	}
 
 	@Override
 	public int getPowerPrecision() {
 		return 1;
+	}
+
+	@Override
+	public int getCycleTime() {
+		return this.cycle != null ? this.cycle.getCycleTime() : DEFAULT_CYCLE_TIME;
 	}
 }
