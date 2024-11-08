@@ -7,6 +7,7 @@ import * as Chart from "chart.js";
 import "chartjs-adapter-date-fns";
 import annotationPlugin from "chartjs-plugin-annotation";
 import { v4 as uuidv4 } from "uuid";
+
 import { ChronoUnit, DEFAULT_NUMBER_CHART_OPTIONS, DEFAULT_TIME_CHART_OPTIONS, Resolution, calculateResolution, isLabelVisible, setLabelVisible } from "src/app/edge/history/shared";
 import { QueryHistoricTimeseriesEnergyPerPeriodResponse } from "src/app/shared/jsonrpc/response/queryHistoricTimeseriesEnergyPerPeriodResponse";
 import { DefaultTypes } from "src/app/shared/service/defaulttypes";
@@ -314,7 +315,7 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
       case YAxisType.TIME:
         return translate.instant("Edge.Index.Widgets.Channeltreshold.ACTIVE_TIME_OVER_PERIOD");
       case YAxisType.PERCENTAGE:
-        return translate.instant("General.percentage");
+        return "%";
       case YAxisType.REACTIVE:
         return "var";
       case YAxisType.ENERGY:
@@ -324,9 +325,9 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
           return "kW";
         }
       case YAxisType.VOLTAGE:
-        return translate.instant("Edge.History.VOLTAGE");
+        return "V";
       case YAxisType.CURRENT:
-        return translate.instant("Edge.History.CURRENT");
+        return "A";
       case YAxisType.NONE:
         return "";
       default:
@@ -362,9 +363,8 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
     let options: Chart.ChartOptions = Utils.deepCopy(<Chart.ChartOptions>Utils.deepCopy(AbstractHistoryChart.getDefaultOptions(chartOptionsType, service, labels)));
     const displayValues: HistoryUtils.DisplayValue<HistoryUtils.CustomOptions>[] = chartObject.output(channelData.data);
 
-    const showYAxisType: boolean = chartObject.yAxes.length > 1;
     chartObject.yAxes.forEach((element) => {
-      options = AbstractHistoryChart.getYAxisOptions(options, element, translate, chartType, locale, datasets, showYAxisType);
+      options = AbstractHistoryChart.getYAxisOptions(options, element, translate, chartType, locale, datasets, true);
     });
 
     options.plugins.tooltip.callbacks.title = (tooltipItems: Chart.TooltipItem<any>[]): string => {
@@ -474,7 +474,7 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
       function rebuildScales(chart: Chart.Chart) {
         let options = chart.options;
         chartObject.yAxes.forEach((element) => {
-          options = AbstractHistoryChart.getYAxisOptions(options, element, translate, chartType, locale, _dataSets, showYAxisType);
+          options = AbstractHistoryChart.getYAxisOptions(options, element, translate, chartType, locale, _dataSets, true);
         });
       }
 
@@ -509,7 +509,6 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
     options.scales.x.ticks["source"] = "auto";
     options.scales.x.ticks.maxTicksLimit = 31;
     options.scales.x["bounds"] = "ticks";
-    options;
     options = AbstractHistoryChart.getExternalPluginFeatures(displayValues, options, chartType);
 
     return options;
@@ -596,13 +595,6 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
           beginAtZero: false,
         };
         break;
-
-      case YAxisType.POWER:
-      case YAxisType.ENERGY:
-      case YAxisType.REACTIVE:
-      case YAxisType.NONE:
-        options.scales[element.yAxisId] = baseConfig;
-        break;
       case YAxisType.CURRENCY:
         options.scales[element.yAxisId] = {
           ...baseConfig,
@@ -611,6 +603,12 @@ export abstract class AbstractHistoryChart implements OnInit, OnDestroy {
             source: "auto",
           },
         };
+        break;
+      case YAxisType.POWER:
+      case YAxisType.ENERGY:
+      case YAxisType.REACTIVE:
+      case YAxisType.NONE:
+        options.scales[element.yAxisId] = baseConfig;
         break;
     }
     return options;
